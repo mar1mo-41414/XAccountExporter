@@ -1,0 +1,95 @@
+name: Build GUI binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: macos-14
+            name: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[build]"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: >-
+          pyinstaller --onefile --windowed --name xarchive-gui
+          --collect-all gallery_dl
+          --add-data "src/xarchive/templates;xarchive/templates"
+          --paths src
+          packaging/run_gui.py
+
+      - name: Build (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: >-
+          pyinstaller --onefile --windowed --name xarchive-gui
+          --collect-all gallery_dl
+          --add-data "src/xarchive/templates:xarchive/templates"
+          --paths src
+          packaging/run_gui.py
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd dist
+          7z a "../xarchive-gui-${{ matrix.name }}.zip" xarchive-gui.exe
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc xarchive-gui.app "../xarchive-gui-${{ matrix.name }}.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          tar -czf "../xarchive-gui-${{ matrix.name }}.tar.gz" xarchive-gui
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xarchive-gui-${{ matrix.name }}
+          path: xarchive-gui-${{ matrix.name }}.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: xarchive ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*
