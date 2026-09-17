@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@{{ username }} 投稿アーカイブ</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --text:#1a1d21; --muted:#6b7280;
+  --border:#e2e5ea; --accent:#2563eb; --deleted-bg:#fdeceb; --deleted-border:#e57373;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#15171a; --card:#1f2226; --text:#e8eaed; --muted:#9aa0a6;
+    --border:#2c2f34; --accent:#5b9dff; --deleted-bg:#3a2020; --deleted-border:#a04040;
+  }
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.55;}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--border);padding:12px 16px;}
+h1{font-size:16px;margin:0 0 8px 0;}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.controls input[type=text],.controls input[type=date]{
+  padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
+}
+.controls button,.controls select{
+  padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);cursor:pointer;
+}
+.controls label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px;}
+.meta{font-size:12px;color:var(--muted);}
+main{max-width:680px;margin:0 auto;padding:16px 12px 80px;}
+.thread{margin-bottom:14px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:6px;}
+.card.deleted{background:var(--deleted-bg);border-color:var(--deleted-border);}
+.card .row{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted);margin-bottom:4px;}
+.card .author strong{color:var(--text);}
+.card .content{white-space:pre-wrap;word-break:break-word;font-size:14.5px;}
+.content a{color:var(--accent);overflow-wrap:anywhere;}
+.card .badge{display:inline-block;font-size:11px;color:var(--deleted-border);border:1px solid var(--deleted-border);border-radius:4px;padding:0 5px;margin-left:6px;}
+.media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-top:8px;}
+.media-grid img,.media-grid video{width:100%;max-height:280px;object-fit:cover;border-radius:8px;cursor:pointer;background:#000;}
+.media-grid video{cursor:default;}
+.quote-card{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13.5px;background:var(--bg);}
+.fallback-link{display:inline-block;margin-top:6px;font-size:13px;color:var(--accent);}
+.replies{margin-left:18px;padding-left:12px;border-left:2px solid var(--border);}
+.empty{color:var(--muted);text-align:center;padding:40px 0;}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:100;padding:20px;}
+#lightbox.open{display:flex;}
+#lightbox img{max-width:100%;max-height:100%;}
+#lightbox video{max-width:100%;max-height:100%;}
+</style>
+</head>
+<body>
+<header>
+  <h1>@{{ username }} 投稿アーカイブ <span class="meta">({{ post_count }}件)</span></h1>
+  <div class="controls">
+    <input type="text" id="search" placeholder="本文を検索...">
+    <select id="sortOrder">
+      <option value="desc">新しい順</option>
+      <option value="asc">古い順</option>
+    </select>
+    <label>から <input type="date" id="dateFrom"></label>
+    <label>まで <input type="date" id="dateTo"></label>
+    <label><input type="checkbox" id="mediaOnly"> メディアのみ</label>
+    <button id="resetBtn">リセット</button>
+  </div>
+</header>
+<main id="main"></main>
+<div id="lightbox"></div>
+
+<script type="application/json" id="data-b64">{{ data_b64 }}</script>
+<script>
+(function(){
+  "use strict";
+
+  function loadData(){
+    var b64 = document.getElementById("data-b64").textContent;
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+  }
+
+  var THREADS = loadData();
+  var mainEl = document.getElementById("main");
+  var searchEl = document.getElementById("search");
+  var sortEl = document.getElementById("sortOrder");
+  var dateFromEl = document.getElementById("dateFrom");
+  var dateToEl = document.getElementById("dateTo");
+  var mediaOnlyEl = document.getElementById("mediaOnly");
+  var lightbox = document.getElementById("lightbox");
+
+  function esc(s){
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  var URL_RE = /(https?:\/\/[^\s]+)/g;
+  var URL_DISPLAY_MAX = 40;
+
+  function truncateUrl(url){
+    var display = url.replace(/^https?:\/\//, "");
+    if (display.length > URL_DISPLAY_MAX){
+      display = display.slice(0, URL_DISPLAY_MAX) + "…";
+    }
+    return display;
+  }
+
+  // contentは未エスケープの生テキストを渡すこと(URL部分と非URL部分をそれぞれエスケープする)
+  function linkify(raw){
+    var text = raw == null ? "" : String(raw);
+    var out = "";
+    var lastIndex = 0;
+    var m;
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(text)) !== null){
+      out += esc(text.slice(lastIndex, m.index));
+      out += '<a href="' + esc(m[0]) + '" target="_blank" rel="noopener">' +
+        esc(truncateUrl(m[0])) + '</a>';
+      lastIndex = m.index + m[0].length;
+    }
+    out += esc(text.slice(lastIndex));
+    return out;
+  }
+
+  function fmtDate(iso){
+    if (!iso) return "";
+    return String(iso).replace("T", " ").slice(0, 19);
+  }
+
+  function nodeMatchesText(node, q){
+    if (!q) return true;
+    var c = (node.content || "").toLowerCase();
+    if (c.indexOf(q) !== -1) return true;
+    return (node.replies || []).some(function(r){ return nodeMatchesText(r, q); });
+  }
+
+  function nodeInRange(node, from, to){
+    if (!node.date) return true;
+    var d = node.date.slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  }
+
+  function hasMedia(node){
+    if ((node.media || []).length) return true;
+    return (node.replies || []).some(hasMedia);
+  }
+
+  function renderMedia(media){
+    if (!media || !media.length) return "";
+    var html = '<div class="media-grid">';
+    media.forEach(function(m){
+      var src = "media/" + encodeURIComponent(m.filename).replace(/%2F/g, "/");
+      if (m.kind === "video" || m.kind === "gif"){
+        html += '<video src="' + src + '" controls preload="metadata"></video>';
+      } else {
+        html += '<img src="' + src + '" loading="lazy" data-full="' + src + '">';
+      }
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function renderQuote(q){
+    if (!q) return "";
+    var author = q.author || {};
+    return '<div class="quote-card">' +
+      '<div class="row"><span class="author"><strong>' + esc(author.nick || author.name || "") +
+      '</strong> @' + esc(author.name || "") + '</span><span>' + fmtDate(q.date) + '</span></div>' +
+      '<div class="content">' + linkify(q.content) + '</div>' +
+      renderMedia(q.media) +
+      "</div>";
+  }
+
+  function tweetUrl(id){
+    return "https://x.com/i/status/" + id;
+  }
+
+  function renderNode(node){
+    var author = node.author || {};
+    var cls = "card" + (node.is_deleted ? " deleted" : "");
+    var html = '<div class="' + cls + '">';
+    html += '<div class="row"><span class="author"><strong>' + esc(author.nick || author.name || "") +
+      '</strong> @' + esc(author.name || "") + '</span><span>' + fmtDate(node.date) + '</span></div>';
+    html += '<div class="content">' + linkify(node.content) +
+      (node.is_deleted ? '<span class="badge">削除済み</span>' : "") + '</div>';
+    html += renderMedia(node.media);
+    if (node.external_reply_id){
+      html += '<a class="fallback-link" href="' + tweetUrl(node.external_reply_id) +
+        '" target="_blank" rel="noopener">↩ 元の投稿を開く(未取得)</a><br>';
+    }
+    if (node.quote){
+      html += renderQuote(node.quote);
+    } else if (node.external_quote_id){
+      html += '<a class="fallback-link" href="' + tweetUrl(node.external_quote_id) +
+        '" target="_blank" rel="noopener">🔗 引用元を開く(未取得)</a>';
+    }
+    html += "</div>";
+
+    var replies = (node.replies || []).filter(passesFilter);
+    if (replies.length){
+      html += '<div class="replies">' + replies.map(renderNode).join("") + "</div>";
+    }
+    return '<div class="thread">' + html + "</div>";
+  }
+
+  var state = { q: "", from: "", to: "", mediaOnly: false };
+
+  function passesFilter(node){
+    var q = state.q;
+    var self_match = (node.content || "").toLowerCase().indexOf(q) !== -1;
+    var desc_match = (node.replies || []).some(function(r){ return nodeMatchesText(r, q); });
+    if (q && !self_match && !desc_match) return false;
+    if ((state.from || state.to) && !nodeInRange(node, state.from, state.to)) {
+      var childInRange = (node.replies || []).some(function(r){ return nodeInRange(r, state.from, state.to); });
+      if (!childInRange) return false;
+    }
+    if (state.mediaOnly && !hasMedia(node)) return false;
+    return true;
+  }
+
+  function render(){
+    state.q = (searchEl.value || "").toLowerCase().trim();
+    state.from = dateFromEl.value || "";
+    state.to = dateToEl.value || "";
+    state.mediaOnly = mediaOnlyEl.checked;
+
+    var roots = THREADS.filter(passesFilter);
+    roots.sort(function(a, b){
+      var da = a.date || "", db = b.date || "";
+      return sortEl.value === "asc" ? (da < db ? -1 : 1) : (da > db ? -1 : 1);
+    });
+
+    if (!roots.length){
+      mainEl.innerHTML = '<div class="empty">該当する投稿がありません</div>';
+      return;
+    }
+    mainEl.innerHTML = roots.map(renderNode).join("");
+  }
+
+  mainEl.addEventListener("click", function(e){
+    var img = e.target.closest("img[data-full]");
+    if (!img) return;
+    lightbox.innerHTML = '<img src="' + img.getAttribute("data-full") + '">';
+    lightbox.classList.add("open");
+  });
+  lightbox.addEventListener("click", function(){
+    lightbox.classList.remove("open");
+    lightbox.innerHTML = "";
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    searchEl.value = ""; dateFromEl.value = ""; dateToEl.value = "";
+    mediaOnlyEl.checked = false; sortEl.value = "desc";
+    render();
+  });
+
+  [searchEl, dateFromEl, dateToEl, sortEl].forEach(function(el){
+    el.addEventListener("input", render);
+    el.addEventListener("change", render);
+  });
+  mediaOnlyEl.addEventListener("change", render);
+
+  render();
+})();
+</script>
+</body>
+</html>

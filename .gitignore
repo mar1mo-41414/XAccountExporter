@@ -1,0 +1,11 @@
+start-note.md
+cookies.txt
+data/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+._*
+build/
+dist/
+*.spec
