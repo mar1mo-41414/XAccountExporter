@@ -62,7 +62,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd dist
-          ditto -c -k --sequesterRsrc xarchive-gui.app "../xarchive-gui-${{ matrix.name }}.zip"
+          ditto -c -k --keepParent --sequesterRsrc xarchive-gui.app "../xarchive-gui-${{ matrix.name }}.zip"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
