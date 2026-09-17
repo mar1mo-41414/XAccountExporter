@@ -15,6 +15,9 @@ source .venv/bin/activate
 (本垢のCookieは使わないこと)。CLIではプロジェクトルートに`cookies.txt`として
 配置するのが簡単だが、GUIでは任意のパスのCookieファイルを選択できる。
 
+GUIだけ使いたい場合、Pythonのセットアップは不要。Windows/macOS(Apple Silicon)/Linux向けの
+ビルド済み実行ファイルを[Releases](../../releases)からダウンロードして使える。
+
 ## GUIの使い方
 
 ```bash
