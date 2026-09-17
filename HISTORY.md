@@ -148,3 +148,47 @@ gallery-dlの出力を流すために必要だったが、CLIの体験も(完了
   PyInstallerはmacOSでは単体バイナリと`.app`バンドルの両方を自動生成することが分かった
   (Linuxでは`.app`は生成されない)。Windows版は依然未検証
   (詳細は`docs/BUILD.md`)
+
+## 2026-09-17 GitHub Actionsリリースビルド追加、macOS zipの不具合修正
+
+タグpush(`v*`)でWindows x64 / Linux x64 / macOS ARM64(`macos-14`)向けに
+`xarchive-gui`をビルドし、GitHub Releaseへ添付するワークフロー
+(GitHub専用、`.github/workflows/release.yml`。Giteaには置かない)を追加し、
+`v0.1.0`で実際に3プラットフォームとも成功することを確認した。
+
+その後、macOS版のzipを解凍すると`.app`ではなく内部の`Contents/`がトップレベルに
+展開されてしまう不具合をユーザーから指摘された。原因は`ditto -c -k`が
+デフォルトでは指定した`.app`ディレクトリの**内容**をzipのルートに配置する挙動で、
+`.app`自体を1つのトップレベルエントリとして含めるには`--keepParent`オプションが
+必要だったため。ワークフローに`--keepParent`を追加して修正し、`v0.1.1`として
+再タグ・再ビルドした(`v0.1.0`のタグ自体は不変のまま残し、修正版として
+バージョンを上げる形にした)。
+
+## 2026-09-17 Windows版で`fetch`が`[WinError 2]`で失敗するバグ
+
+`v0.1.1`をユーザーがWindows実機(別マシン)で実行し、GUIは起動するものの
+`取得(全件)`実行時に`[WinError 2] 指定されたファイルが見つかりません。`で失敗する
+との報告。原因はビルド検証時の見落としで、Linux/macOSでの単体exe動作確認では
+「ビューア生成」ボタンしか実際に試しておらず、`fetch`(gallery-dl呼び出し)自体を
+パッケージ化バイナリから実行して確認していなかった。
+
+根本原因: `fetch.py`は`subprocess.Popen(["gallery-dl", ...])`のように外部コマンド名で
+gallery-dlを呼んでいたが、これは`gallery-dl`が別途PATH上にインストールされている
+前提の呼び方。PyInstallerでフリーズしたバイナリには`--collect-all gallery_dl`で
+Pythonライブラリとしては同梱されるが、**独立した`gallery-dl`実行ファイルは存在しない**
+ため、PATH解決に失敗して`[WinError 2]`(Linux/macOSなら`FileNotFoundError`相当)に
+なっていた。開発環境(venv)では偶然`gallery-dl`コマンドがPATH上にあったため
+気づけなかった。
+
+対策として、`gallery-dl`という外部コマンド名で呼ぶのをやめ、以下の2パターンに
+分岐する自己解決方式にした(`fetch._gallery_dl_argv()`):
+- 通常実行時: `[sys.executable, "-m", "gallery_dl", ...]`(モジュール実行、PATH不要)
+- PyInstallerフリーズ時(`sys.frozen`): `[sys.executable, "--xarchive-run-gallery-dl", ...]`
+  として**自分自身の実行ファイルを引数付きで再実行**。`packaging/run_gui.py`側で
+  この専用フラグを検出した場合はGUIではなく`gallery_dl.main()`を直接呼ぶよう分岐した
+
+Linux上でこの自己再実行方式を実際に検証: `./dist/xarchive-gui --xarchive-run-gallery-dl
+--version`で単独動作を確認した上で、GUIから実際に`fetch`ボタンを押してエラーなく
+完了することまで確認した(以前の検証で漏れていた「fetchボタンを実際に押す」テストを
+今回はきちんと実施した)。`v0.1.2`としてリリース。Windows実機での再確認はユーザー側で
+実施予定。

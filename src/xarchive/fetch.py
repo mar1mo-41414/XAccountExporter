@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,19 @@ LOGIN_ERROR_HINTS = (
 )
 
 OnLine = Callable[[str], None]
+
+# PyInstallerでの単一バイナリ化時、外部の`gallery-dl`コマンドはPATH上に存在しない
+# (パッケージ化バイナリはgallery_dlをPythonライブラリとしてしか同梱していないため)。
+# そのためsubprocessでは常に「今動いているPythonインタプリタ(通常時)」または
+# 「自分自身の実行ファイル(PyInstallerフリーズ時)」を再実行し、後者の場合は
+# packaging/run_gui.pyがこのフラグを見て`gallery_dl.main()`を直接呼び出す。
+GALLERY_DL_REEXEC_FLAG = "--xarchive-run-gallery-dl"
+
+
+def _gallery_dl_argv() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, GALLERY_DL_REEXEC_FLAG]
+    return [sys.executable, "-m", "gallery_dl"]
 
 
 def find_project_root(start: Path | None = None) -> Path:
@@ -83,7 +97,7 @@ def _run_gallery_dl(config: dict, args: list[str], on_line: OnLine | None = None
         json.dump(config, fp, ensure_ascii=False)
         conf_path = fp.name
     try:
-        cmd = ["gallery-dl", "--config", conf_path, *args]
+        cmd = _gallery_dl_argv() + ["--config", conf_path, *args]
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,

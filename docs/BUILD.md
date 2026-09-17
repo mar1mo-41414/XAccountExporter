@@ -49,13 +49,30 @@ Windows(PowerShell、`--add-data`の区切り文字が`;`になる点に注意):
   `run_gui.py`は`from xarchive.gui import main`という絶対importにすることでこれを回避している。
 - `--windowed`: Windowsでの起動時に黒いコンソールウィンドウが一緒に開かないようにする。
 
+### gallery-dlの呼び出し方(自己再実行方式)
+
+パッケージ化されたバイナリの中には、外部コマンドとしての`gallery-dl`は**存在しない**
+(`--collect-all gallery_dl`はPythonライブラリとして同梱するだけで、独立した実行ファイルは
+作られない)。そのため`xarchive/fetch.py`は素朴に`subprocess.Popen(["gallery-dl", ...])`を
+呼ぶのではなく、以下のように分岐している(`fetch._gallery_dl_argv()`):
+
+- 通常のPython実行時(venv経由のCLI/GUI): `[sys.executable, "-m", "gallery_dl", ...]`
+  (`python -m gallery_dl`は同じ環境にインストールされたgallery-dlを確実に呼べる)
+- PyInstallerでフリーズ済みの場合(`sys.frozen`): `[sys.executable, "--xarchive-run-gallery-dl", ...]`
+  として**自分自身の実行ファイルを引数付きで再実行**する。`packaging/run_gui.py`側で
+  この専用フラグを検知した場合はGUIを起動せず`gallery_dl.main()`を直接呼び出す
+  (PyInstaller onefileバイナリを「自分自身をサブプロセスとして再起動し、別モードで
+  動かす」ための標準的な回避策)。
+
 ## 動作確認手順
 
 1. `dist/xarchive-gui`(または`.exe`)をビルド元と別のディレクトリにコピーして実行し、
    ソースツリーに依存せず単体で起動することを確認する
 2. GUIから任意アカウントの`fetch`(差分取得)を実行し、gallery-dlの動的extractor読み込みが
    正常に動作することを確認する(ここで失敗する場合は`--collect-all gallery_dl`まわりの
-   問題である可能性が高い)
+   問題である可能性が高い)。**「ビューア生成」だけの確認では不十分**
+   (`[WinError 2]`等、gallery-dl自体の呼び出し失敗はfetch実行時にしか現れないため
+   必ずfetchボタンまで実際に押して確認すること)
 3. 「ビューア生成」でエラーなくHTMLが生成されることを確認する
    (テンプレート同梱が正しくできていないとここで失敗する)
 

@@ -1,6 +1,6 @@
 [project]
 name = "xarchive"
-version = "0.1.1"
+version = "0.1.2"
 description = "X(Twitter)の指定アカウントの投稿を全件保存し、オフライン閲覧用HTMLビューアを生成するツール"
 requires-python = ">=3.12"
 dependencies = [
