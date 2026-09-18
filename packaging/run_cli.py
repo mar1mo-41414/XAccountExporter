@@ -2,8 +2,8 @@ from xarchive.fetch import dispatch_gallery_dl_reexec
 
 dispatch_gallery_dl_reexec()
 
-from xarchive.gui import main
+from xarchive.cli import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -249,3 +249,19 @@ cron設定はユーザー環境(marnux)側で`crontab`に直接登録(毎日4時
 `not_found`が絶対にTrueにならなかった)。判定条件を`"no results for" in 出力.lower()`
 のみに単純化して修正し、実際に削除したテスト投稿に対して`check-deleted`を実行して
 正しく検知・`deleted.json`への記録・ビューアへの反映までを実機で確認した。
+
+## 2026-09-19 CLI(`xarchive`)も単一バイナリ化
+
+GUIだけでなくCLIもPyInstallerで単一バイナリ化したいという要望。GUI版で既に確立していた
+仕組み(`packaging/run_gui.py`経由の自己再実行方式)をそのままCLI版にも流用できるよう、
+gallery-dl再実行ディスパッチ部分を`fetch.py`の`dispatch_gallery_dl_reexec()`として
+共通関数に切り出し、新設した`packaging/run_cli.py`(`from xarchive.cli import main`)から
+GUI版と同様に呼び出す構成にした。
+
+Linux上で`--onefile --name xarchive`でビルドし、生成物をソースツリーと無関係な
+`/tmp`の別ディレクトリにコピーして単体で`fetch`→`build`まで実際に動作することを
+確認済み(`--windowed`はCLIでは付けない。コンソール出力が必要なため)。
+
+GitHub Actionsのリリースワークフローも、既存のGUIビルドに加えてCLIビルド・パッケージ・
+成果物アップロードのステップを追加し、Releaseに`xarchive-cli-<platform>.*`として
+GUI版と並べて添付されるようにした。

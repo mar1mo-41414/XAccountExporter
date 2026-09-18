@@ -1,4 +1,4 @@
-name: Build GUI binaries
+name: Build binaries
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[build]"
 
-      - name: Build (Windows)
+      - name: Build GUI (Windows)
         if: runner.os == 'Windows'
         run: >-
           pyinstaller --onefile --windowed --name xarchive-gui
@@ -42,7 +42,7 @@ jobs:
           --paths src
           packaging/run_gui.py
 
-      - name: Build (Linux / macOS)
+      - name: Build GUI (Linux / macOS)
         if: runner.os != 'Windows'
         run: >-
           pyinstaller --onefile --windowed --name xarchive-gui
@@ -51,30 +51,58 @@ jobs:
           --paths src
           packaging/run_gui.py
 
+      - name: Build CLI (Windows)
+        if: runner.os == 'Windows'
+        run: >-
+          pyinstaller --onefile --name xarchive
+          --collect-all gallery_dl
+          --add-data "src/xarchive/templates;xarchive/templates"
+          --paths src
+          packaging/run_cli.py
+
+      - name: Build CLI (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: >-
+          pyinstaller --onefile --name xarchive
+          --collect-all gallery_dl
+          --add-data "src/xarchive/templates:xarchive/templates"
+          --paths src
+          packaging/run_cli.py
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           cd dist
           7z a "../xarchive-gui-${{ matrix.name }}.zip" xarchive-gui.exe
+          7z a "../xarchive-cli-${{ matrix.name }}.zip" xarchive.exe
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
           ditto -c -k --keepParent --sequesterRsrc xarchive-gui.app "../xarchive-gui-${{ matrix.name }}.zip"
+          tar -czf "../xarchive-cli-${{ matrix.name }}.tar.gz" xarchive
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           cd dist
           tar -czf "../xarchive-gui-${{ matrix.name }}.tar.gz" xarchive-gui
+          tar -czf "../xarchive-cli-${{ matrix.name }}.tar.gz" xarchive
 
-      - name: Upload artifact
+      - name: Upload GUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: xarchive-gui-${{ matrix.name }}
           path: xarchive-gui-${{ matrix.name }}.*
+          if-no-files-found: error
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xarchive-cli-${{ matrix.name }}
+          path: xarchive-cli-${{ matrix.name }}.*
           if-no-files-found: error
 
   release:

@@ -22,7 +22,9 @@ OnLine = Callable[[str], None]
 # (パッケージ化バイナリはgallery_dlをPythonライブラリとしてしか同梱していないため)。
 # そのためsubprocessでは常に「今動いているPythonインタプリタ(通常時)」または
 # 「自分自身の実行ファイル(PyInstallerフリーズ時)」を再実行し、後者の場合は
-# packaging/run_gui.pyがこのフラグを見て`gallery_dl.main()`を直接呼び出す。
+# dispatch_gallery_dl_reexec()がこのフラグを見て`gallery_dl.main()`を直接呼び出す。
+# GUI(packaging/run_gui.py)・CLI(packaging/run_cli.py)の両エントリスクリプトが
+# 起動直後にdispatch_gallery_dl_reexec()を呼ぶことでこの仕組みを共有している。
 GALLERY_DL_REEXEC_FLAG = "--xarchive-run-gallery-dl"
 
 
@@ -30,6 +32,17 @@ def _gallery_dl_argv() -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, GALLERY_DL_REEXEC_FLAG]
     return [sys.executable, "-m", "gallery_dl"]
+
+
+def dispatch_gallery_dl_reexec() -> None:
+    """フリーズ実行ファイルがgallery-dl再実行フラグ付きで呼ばれていた場合、
+    gallery_dl.main()を実行してプロセスを終了する(戻らない)。
+    フラグが無ければ何もせずそのまま処理を返す。"""
+    if len(sys.argv) > 1 and sys.argv[1] == GALLERY_DL_REEXEC_FLAG:
+        sys.argv = ["gallery-dl", *sys.argv[2:]]
+        import gallery_dl
+
+        raise SystemExit(gallery_dl.main())
 
 
 def find_project_root(start: Path | None = None) -> Path:
