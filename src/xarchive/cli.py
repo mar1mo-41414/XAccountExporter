@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import http.server
 import sys
 from pathlib import Path
@@ -18,6 +19,16 @@ class _ViewerHTTPServer(http.server.ThreadingHTTPServer):
         if sys.exc_info()[0] in _QUIET_CONNECTION_ERRORS:
             return
         super().handle_error(request, client_address)
+
+
+class _ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def address_string(self):
+        # http.server標準のaddress_string()はアクセス元IPごとに逆引きDNS
+        # (socket.getfqdn)を行うが、家庭内ネットワークはPTRレコードが無いことが
+        # 多く、リクエストごとに数秒〜のタイムアウト待ちが発生してしまう
+        # (127.0.0.1だと即座に解決されるため0.0.0.0で外部から使うまで気づきにくい)。
+        # ログ用の表示名でしかないので、常に生のIPアドレスを返して逆引きをスキップする。
+        return self.client_address[0]
 
 
 def _data_root(root: Path) -> Path:
@@ -123,9 +134,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
-    handler_cls = lambda *a, **kw: http.server.SimpleHTTPRequestHandler(  # noqa: E731
-        *a, directory=str(serve_dir), **kw
-    )
+    handler_cls = functools.partial(_ViewerRequestHandler, directory=str(serve_dir))
     with _ViewerHTTPServer((args.host, args.port), handler_cls) as httpd:
         print(f"[xarchive] http://{args.host}:{args.port}/ で配信中 (Ctrl+Cで終了)")
         if args.host == "0.0.0.0":
