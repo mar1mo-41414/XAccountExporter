@@ -107,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_serve = sub.add_parser("serve", help="生成済みビューアを簡易HTTPサーバーで配信")
     p_serve.add_argument("username")
-    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--port", type=int, default=8000, help="配信ポート番号 (既定: 8000)")
     p_serve.add_argument("--host", default="127.0.0.1",
                           help="バインドするアドレス。0.0.0.0を指定すると同一ネットワーク上の"
                                "他端末からもアクセス可能になる (既定: 127.0.0.1)")
