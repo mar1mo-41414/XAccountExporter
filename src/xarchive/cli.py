@@ -40,6 +40,61 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_fetch_all(args: argparse.Namespace) -> int:
+    """data/ 配下の取得済みアカウントすべてに対して差分取得+ビューア再生成を順に行う。
+    cron等での定期実行を想定し、多重実行防止のロックを取る。"""
+    root = fetch_mod.find_project_root()
+    data_root = _data_root(root)
+    data_root.mkdir(parents=True, exist_ok=True)
+
+    lock_path = data_root / ".fetch-all.lock"
+    lock_file = open(lock_path, "w")
+    try:
+        try:
+            import fcntl
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except ImportError:
+            pass  # fcntl非対応環境(Windows等)ではロック無しで続行
+        except BlockingIOError:
+            print("[xarchive] 既に fetch-all が実行中のためスキップします。", file=sys.stderr)
+            return 1
+
+        usernames = sorted(
+            p.name for p in data_root.iterdir()
+            if p.is_dir() and not p.name.startswith(".") and (p / "posts").is_dir()
+        )
+        if not usernames:
+            print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
+            return 0
+
+        print(f"[xarchive] {len(usernames)}件のアカウントを順に差分取得します: {', '.join(usernames)}")
+        exit_code = 0
+        for username in usernames:
+            print(f"[xarchive] === {username} ===")
+            rc = fetch_mod.fetch(
+                username,
+                data_root,
+                root / "cookies.txt",
+                full=False,
+                sleep_request=args.sleep_request,
+                sleep=args.sleep,
+                abort_after=args.abort_after,
+                include_retweets=args.include_retweets,
+                include_replies=not args.no_replies,
+                on_line=print,
+            )
+            if rc != 0:
+                print(f"[xarchive] {username} の取得に失敗しました(code={rc})。次へ進みます。",
+                      file=sys.stderr)
+                exit_code = rc
+                continue
+            out = render_mod.build(data_root / username, username)
+            print(f"[xarchive] {username} のビューアを更新しました: {out}")
+        return exit_code
+    finally:
+        lock_file.close()
+
+
 def cmd_check_deleted(args: argparse.Namespace) -> int:
     root = fetch_mod.find_project_root()
     return fetch_mod.check_deleted(
@@ -104,6 +159,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--abort-after", type=int, default=5,
                           help="差分更新時、何件連続でスキップしたら打ち切るか (既定: 5)")
     p_fetch.set_defaults(func=cmd_fetch)
+
+    p_fetch_all = sub.add_parser(
+        "fetch-all", help="data/配下の全アカウントを順に差分取得+ビューア再生成(cron向け)"
+    )
+    p_fetch_all.add_argument("--include-retweets", action="store_true",
+                              help="単独リツイートも含める(既定: 含めない)")
+    p_fetch_all.add_argument("--no-replies", action="store_true",
+                              help="リプライを含めない(既定: 含める)")
+    p_fetch_all.add_argument("--sleep-request", default="3.0-6.0")
+    p_fetch_all.add_argument("--sleep", default="1.0-3.0")
+    p_fetch_all.add_argument("--abort-after", type=int, default=5)
+    p_fetch_all.set_defaults(func=cmd_fetch_all)
 
     p_check = sub.add_parser("check-deleted", help="保存済み投稿の削除有無を確認(任意・要ネットワーク)")
     p_check.add_argument("username")

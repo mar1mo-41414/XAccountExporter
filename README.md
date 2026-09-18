@@ -54,6 +54,16 @@ xarchive serve <username> --host 0.0.0.0
 
 # 保存済み投稿が削除されていないか確認(任意・追加のネットワークアクセスを伴う)
 xarchive check-deleted <username> --limit 100
+
+# data/配下の取得済みアカウント全てを順に差分取得+ビューア再生成(cron向け)
+xarchive fetch-all
+```
+
+`fetch-all`は多重実行防止のロックを取るので、前回の実行が終わっていなければ何もせず
+終了する。cronで定期実行する例(毎日4時に実行、ログは`data/fetch-all.log`に追記):
+
+```cron
+0 4 * * * cd /path/to/XAccountExporter && .venv/bin/xarchive fetch-all >> data/fetch-all.log 2>&1
 ```
 
 生成物は`data/<username>/`以下にまとまる(`media/`・`posts/`・`index.html`)。
