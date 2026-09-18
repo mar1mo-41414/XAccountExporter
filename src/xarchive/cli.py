@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import argparse
 import http.server
-import socketserver
 import sys
 from pathlib import Path
 
 from . import fetch as fetch_mod
 from . import render as render_mod
+
+# クライアント側の接続切断(動画のシーク・タブを閉じる等)で頻発するが無害なので
+# トレースバックを出さずに黙って無視する例外
+_QUIET_CONNECTION_ERRORS = (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)
+
+
+class _ViewerHTTPServer(http.server.ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        if sys.exc_info()[0] in _QUIET_CONNECTION_ERRORS:
+            return
+        super().handle_error(request, client_address)
 
 
 def _data_root(root: Path) -> Path:
@@ -61,7 +71,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     handler_cls = lambda *a, **kw: http.server.SimpleHTTPRequestHandler(  # noqa: E731
         *a, directory=str(serve_dir), **kw
     )
-    with socketserver.TCPServer((args.host, args.port), handler_cls) as httpd:
+    with _ViewerHTTPServer((args.host, args.port), handler_cls) as httpd:
         print(f"[xarchive] http://{args.host}:{args.port}/ で配信中 (Ctrl+Cで終了)")
         if args.host == "0.0.0.0":
             print("[xarchive] 警告: 同一ネットワーク上の他端末からもアクセス可能です"
