@@ -245,16 +245,10 @@ def check_deleted(
         url = f"https://x.com/i/status/{tweet_id}"
         result = _run_gallery_dl(config, ["--simulate", url])
         lowered = result.output.lower()
-        not_found = (
-            result.returncode != 0
-            and (
-                "404" in lowered
-                or "no results" in lowered
-                or "not found" in lowered
-                or "deleted" in lowered
-                or "does not exist" in lowered
-            )
-        )
+        # gallery-dlは削除済み/非公開ツイートでも終了コード0(正常終了)を返し、
+        # "[twitter][info] No results for <url>" とだけ出力する(実機検証済み)。
+        # 終了コードでは判定できないため、出力テキストのみで判定する。
+        not_found = "no results for" in lowered
         if not_found:
             emit(f"[xarchive] 削除を検知: {tweet_id}")
             newly_deleted.append(tweet_id)
