@@ -19,6 +19,12 @@ def _count_posts(threads: list[dict]) -> int:
     return total
 
 
+_FAVICON_MIME = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp", ".ico": "image/x-icon",
+}
+
+
 def build(data_dir: Path, username: str) -> Path:
     threads = models.load_all(data_dir)
 
@@ -31,10 +37,19 @@ def build(data_dir: Path, username: str) -> Path:
     raw_json = json.dumps(threads, ensure_ascii=False, default=str)
     data_b64 = base64.b64encode(raw_json.encode("utf-8")).decode("ascii")
 
+    avatar_files = sorted(data_dir.glob("avatar.*"))
+    favicon_filename = avatar_files[0].name if avatar_files else None
+    favicon_mime = (
+        _FAVICON_MIME.get(avatar_files[0].suffix.lower(), "image/jpeg")
+        if avatar_files else None
+    )
+
     html = template.render(
         username=username,
         data_b64=data_b64,
         post_count=_count_posts(threads),
+        favicon_filename=favicon_filename,
+        favicon_mime=favicon_mime,
     )
 
     data_dir.mkdir(parents=True, exist_ok=True)

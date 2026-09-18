@@ -59,6 +59,9 @@ xarchive check-deleted <username> --limit 100
 生成物は`data/<username>/`以下にまとまる(`media/`・`posts/`・`index.html`)。
 `data/`ディレクトリごとバックアップ・移動しても`index.html`はそのまま開ける。
 
+`fetch`実行時、対象アカウントのアイコン画像を`avatar.<拡張子>`として保存し、
+`build`でビューアのfavicon(タブアイコン)に設定する(取得に失敗しても処理は継続する)。
+
 ## 取得の挙動
 
 - 本文のみの投稿・リプライも含めて保存する。単独リツイート(本文なしの純粋なRT)は含めない

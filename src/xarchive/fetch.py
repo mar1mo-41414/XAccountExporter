@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 from typing import Callable
 
@@ -118,6 +119,43 @@ def _run_gallery_dl(config: dict, args: list[str], on_line: OnLine | None = None
         Path(conf_path).unlink(missing_ok=True)
 
 
+def _download_avatar(data_dir: Path, username: str, on_line: OnLine | None) -> None:
+    """保存済み投稿から対象アカウント自身のアイコンURLを探し、
+    data_dir/avatar.<ext> として保存する(ビューアのfaviconに使う)。
+    アイコンはgallery-dlの投稿メタデータに既に含まれているため、
+    gallery-dl自体には専用の取得オプションはなく、ここで直接ダウンロードする。"""
+    from . import models
+
+    def emit(msg: str) -> None:
+        print(msg) if on_line is None else on_line(msg)
+
+    posts = models.load_posts(data_dir)
+    if not posts:
+        return
+    uname_lower = username.lower()
+    candidates = [
+        p for p in posts.values()
+        if (p.get("author") or {}).get("name", "").lower() == uname_lower
+        and (p.get("author") or {}).get("profile_image")
+    ]
+    if not candidates:
+        return
+    candidates.sort(key=lambda p: p.get("date") or "", reverse=True)
+    url = candidates[0]["author"]["profile_image"]
+
+    ext = Path(url.split("?", 1)[0]).suffix or ".jpg"
+    for old in data_dir.glob("avatar.*"):
+        old.unlink(missing_ok=True)
+    dest = data_dir / f"avatar{ext}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            dest.write_bytes(resp.read())
+        emit(f"[xarchive] アイコンを保存しました: {dest}")
+    except Exception as exc:  # noqa: BLE001
+        emit(f"[xarchive] アイコンの取得に失敗しました(スキップ): {exc}")
+
+
 def fetch(
     username: str,
     data_root: Path,
@@ -163,6 +201,8 @@ def fetch(
         else:
             emit(f"[xarchive] gallery-dl が終了コード {result.returncode} で終了しました。")
         return result.returncode
+
+    _download_avatar(d, username, on_line)
 
     emit(f"[xarchive] 完了: {d}")
     return 0

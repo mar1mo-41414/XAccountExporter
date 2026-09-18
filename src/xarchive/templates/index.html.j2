@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>@{{ username }} 投稿アーカイブ</title>
+{% if favicon_filename %}<link rel="icon" type="{{ favicon_mime }}" href="{{ favicon_filename }}">{% endif %}
 <style>
 :root{
   --bg:#f5f6f8; --card:#ffffff; --text:#1a1d21; --muted:#6b7280;
