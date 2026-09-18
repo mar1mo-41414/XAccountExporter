@@ -49,6 +49,9 @@ xarchive build <username>
 # 生成したビューアを簡易サーバーで閲覧(任意。index.htmlを直接開くだけでも動く)
 xarchive serve <username>
 
+# 同一ネットワーク上の他端末(スマホ等)からも閲覧したい場合
+xarchive serve <username> --host 0.0.0.0
+
 # 保存済み投稿が削除されていないか確認(任意・追加のネットワークアクセスを伴う)
 xarchive check-deleted <username> --limit 100
 ```

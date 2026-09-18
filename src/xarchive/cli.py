@@ -61,8 +61,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
     handler_cls = lambda *a, **kw: http.server.SimpleHTTPRequestHandler(  # noqa: E731
         *a, directory=str(serve_dir), **kw
     )
-    with socketserver.TCPServer(("127.0.0.1", args.port), handler_cls) as httpd:
-        print(f"[xarchive] http://127.0.0.1:{args.port}/ で配信中 (Ctrl+Cで終了)")
+    with socketserver.TCPServer((args.host, args.port), handler_cls) as httpd:
+        print(f"[xarchive] http://{args.host}:{args.port}/ で配信中 (Ctrl+Cで終了)")
+        if args.host == "0.0.0.0":
+            print("[xarchive] 警告: 同一ネットワーク上の他端末からもアクセス可能です"
+                  "(取得済みの投稿データが閲覧されます)。信頼できるネットワークでのみ使用してください。")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -105,6 +108,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve = sub.add_parser("serve", help="生成済みビューアを簡易HTTPサーバーで配信")
     p_serve.add_argument("username")
     p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--host", default="127.0.0.1",
+                          help="バインドするアドレス。0.0.0.0を指定すると同一ネットワーク上の"
+                               "他端末からもアクセス可能になる (既定: 127.0.0.1)")
     p_serve.set_defaults(func=cmd_serve)
 
     return parser
