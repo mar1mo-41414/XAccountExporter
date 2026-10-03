@@ -27,6 +27,7 @@ def config_path() -> Path:
 class Settings:
     username: str = ""
     cookies_path: str = ""
+    cookies_mode: str = "file"  # "file" または "dir"
     data_root: str = ""
     include_retweets: bool = False
     include_replies: bool = True

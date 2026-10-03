@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import zlib
 from pathlib import Path
 from typing import Callable
 
@@ -46,18 +47,37 @@ def dispatch_gallery_dl_reexec() -> None:
 
 
 def find_project_root(start: Path | None = None) -> Path:
-    """cookies.txt と pyproject.toml が両方あるディレクトリをプロジェクトルートとみなす
+    """pyproject.toml があるディレクトリをプロジェクトルートとみなす
     (CLIの既定の保存先/Cookie探索にのみ使う。GUIやパッケージ化バイナリではこの前提が
-    成り立たないため、fetch()/check_deleted()はdata_root/cookies_pathを明示的に受け取る)"""
+    成り立たないため、fetch()/check_deleted()はdata_root/cookies_pathを明示的に受け取る)。
+    以前はcookies.txtの存在も条件にしていたが、Cookieをディレクトリにまとめて
+    --cookiesで指定する運用(resolve_cookies参照)ではプロジェクトルート直下に
+    cookies.txtが無いことがあるため、pyproject.tomlのみで判定するようにした。"""
     cur = (start or Path.cwd()).resolve()
     for candidate in (cur, *cur.parents):
-        if (candidate / "cookies.txt").exists() and (candidate / "pyproject.toml").exists():
+        if (candidate / "pyproject.toml").exists():
             return candidate
     return cur
 
 
 def data_dir(data_root: Path, username: str) -> Path:
     return data_root / username
+
+
+def resolve_cookies(cookies_path: Path, username: str) -> Path:
+    """cookies_pathがディレクトリの場合、中の*.txtファイル群から対象アカウント名の
+    CRC32ハッシュに基づいて決定的に1つを選ぶ(同じアカウントは常に同じCookieファイルを
+    使う。複数の捨て垢に負荷を分散しつつ、取得対象ごとの一貫性は保つ狙い)。
+    ファイルの場合はそのまま返す(従来通りの単一Cookie運用)。"""
+    if cookies_path.is_dir():
+        pool = sorted(cookies_path.glob("*.txt"))
+        if not pool:
+            raise FileNotFoundError(
+                f"{cookies_path} 内に .txt ファイルが見つかりません。"
+            )
+        idx = zlib.crc32(username.encode("utf-8")) % len(pool)
+        return pool[idx]
+    return cookies_path
 
 
 def build_gallery_dl_config(
@@ -185,12 +205,20 @@ def fetch(
     def emit(msg: str) -> None:
         print(msg) if on_line is None else on_line(msg)
 
+    try:
+        resolved_cookies = resolve_cookies(cookies_path, username)
+    except FileNotFoundError as exc:
+        emit(f"[xarchive] エラー: {exc}")
+        return 1
+    if cookies_path.is_dir():
+        emit(f"[xarchive] 使用するCookie: {resolved_cookies.name}")
+
     d = data_dir(data_root, username)
     (d / "media").mkdir(parents=True, exist_ok=True)
     (d / "posts").mkdir(parents=True, exist_ok=True)
 
     config = build_gallery_dl_config(
-        cookies_path, d / "media", d / "posts", sleep_request, sleep,
+        resolved_cookies, d / "media", d / "posts", sleep_request, sleep,
         include_retweets=include_retweets, include_replies=include_replies,
     )
 
@@ -238,6 +266,14 @@ def check_deleted(
     def emit(msg: str) -> None:
         print(msg) if on_line is None else on_line(msg)
 
+    try:
+        resolved_cookies = resolve_cookies(cookies_path, username)
+    except FileNotFoundError as exc:
+        emit(f"[xarchive] エラー: {exc}")
+        return 1
+    if cookies_path.is_dir():
+        emit(f"[xarchive] 使用するCookie: {resolved_cookies.name}")
+
     d = data_dir(data_root, username)
     posts = models.load_posts(d)
     if not posts:
@@ -248,7 +284,7 @@ def check_deleted(
     known_deleted = models.load_deleted(d)
 
     candidates = sorted(posts.values(), key=lambda p: p.get("date") or "", reverse=True)[:limit]
-    config = build_gallery_dl_config(cookies_path, d / "media", d / "posts", sleep_request, "0")
+    config = build_gallery_dl_config(resolved_cookies, d / "media", d / "posts", sleep_request, "0")
 
     newly_deleted = []
     for post in candidates:

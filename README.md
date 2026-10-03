@@ -12,8 +12,9 @@ source .venv/bin/activate
 ```
 
 対象アカウントを閲覧できる**捨て垢**のCookieをNetscape形式で用意しておく
-(本垢のCookieは使わないこと)。CLIではプロジェクトルートに`cookies.txt`として
-配置するのが簡単だが、GUIでは任意のパスのCookieファイルを選択できる。
+(本垢のCookieは使わないこと)。何も指定しなければプロジェクトルートの`cookies.txt`を
+使うが、複数の捨て垢を使い分けたい場合は、Cookieファイルをまとめたディレクトリを
+指定することもできる(後述)。
 
 GUI・CLIどちらもPythonのセットアップ無しで使える、Windows/macOS(Apple Silicon)/Linux向けの
 ビルド済み単一実行ファイルを[Releases](../../releases)からダウンロードできる
@@ -25,11 +26,15 @@ GUI・CLIどちらもPythonのセットアップ無しで使える、Windows/mac
 xarchive-gui
 ```
 
-アカウント名・Cookieファイル・保存先ディレクトリを指定し、チェックボックスで
+アカウント名・Cookie・保存先ディレクトリを指定し、チェックボックスで
 単独リツイート/リプライを含めるかを選んで、「取得(差分)」または「全件取得」→
 「ビューア生成」→「ビューアを開く」の順にボタンを押すだけ。入力値は次回起動時に
 復元される。Windows/Mac/Linux向けに単一実行ファイルとして配布する場合の手順は
 [docs/BUILD.md](docs/BUILD.md)を参照。
+
+Cookieの右にある「ファイル」「フォルダ」ラジオボタンで、単一のCookieファイルを
+指定するか、複数のCookieファイル(`*.txt`)をまとめたディレクトリを指定するかを
+選べる。ディレクトリを指定した場合の挙動は次節の`--cookies`と同じ。
 
 ## CLIの使い方
 
@@ -58,7 +63,17 @@ xarchive check-deleted <username> --limit 100
 
 # data/配下の取得済みアカウント全てを順に差分取得+ビューア再生成(cron向け)
 xarchive fetch-all
+
+# 複数の捨て垢Cookieを使い分ける(ディレクトリ内の*.txtをプールとして使う)
+xarchive fetch <username> --cookies /path/to/CookiesDir
 ```
+
+`--cookies`(`fetch`/`fetch-all`/`check-deleted`で指定可能)はファイル・ディレクトリの
+どちらも受け付ける。ファイルを指定すれば従来通りその1つだけを使う。ディレクトリを
+指定すると、中の`*.txt`ファイル群からアカウント名ごとに決定的に1つを選んで使う
+(同じアカウントは常に同じCookieを使い続けるので、捨て垢間の使い分けに一貫性がありつつ、
+アカウントをまたいで負荷が分散される)。未指定時はプロジェクトルートの`cookies.txt`
+(従来通り)。
 
 `fetch-all`は多重実行防止のロックを取るので、前回の実行が終わっていなければ何もせず
 終了する。cronで定期実行する例(毎日4時に実行、ログは`data/fetch-all.log`に追記):

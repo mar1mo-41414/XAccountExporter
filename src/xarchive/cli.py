@@ -35,12 +35,21 @@ def _data_root(root: Path) -> Path:
     return root / "data"
 
 
+def _cookies_path(root: Path, args: argparse.Namespace) -> Path:
+    """--cookies指定が無ければプロジェクトルート直下のcookies.txt(従来通り)を使う。
+    --cookiesにファイルを指定すればそれを単一Cookieとして、ディレクトリを指定すれば
+    中の*.txt群をプール(resolve_cookies参照)として使う。"""
+    if getattr(args, "cookies", None):
+        return Path(args.cookies)
+    return root / "cookies.txt"
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
     root = fetch_mod.find_project_root()
     return fetch_mod.fetch(
         args.username,
         _data_root(root),
-        root / "cookies.txt",
+        _cookies_path(root, args),
         full=args.full,
         sleep_request=args.sleep_request,
         sleep=args.sleep,
@@ -85,7 +94,7 @@ def cmd_fetch_all(args: argparse.Namespace) -> int:
             rc = fetch_mod.fetch(
                 username,
                 data_root,
-                root / "cookies.txt",
+                _cookies_path(root, args),
                 full=False,
                 sleep_request=args.sleep_request,
                 sleep=args.sleep,
@@ -111,7 +120,7 @@ def cmd_check_deleted(args: argparse.Namespace) -> int:
     return fetch_mod.check_deleted(
         args.username,
         _data_root(root),
-        root / "cookies.txt",
+        _cookies_path(root, args),
         limit=args.limit,
         sleep_request=args.sleep_request,
         on_line=print,
@@ -167,6 +176,10 @@ def build_parser() -> argparse.ArgumentParser:
                           help="ファイルダウンロード間隔の秒数範囲 (既定: 1.0-3.0)")
     p_fetch.add_argument("--abort-after", type=int, default=5,
                           help="差分更新時、何件連続でスキップしたら打ち切るか (既定: 5)")
+    p_fetch.add_argument("--cookies",
+                          help="Cookieファイル、またはCookie(*.txt)をまとめたディレクトリのパス。"
+                               "ディレクトリの場合、アカウント名ごとに決定的に1つを選んで使う"
+                               "(既定: プロジェクトルート直下のcookies.txt)")
     p_fetch.set_defaults(func=cmd_fetch)
 
     p_fetch_all = sub.add_parser(
@@ -179,12 +192,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch_all.add_argument("--sleep-request", default="3.0-6.0")
     p_fetch_all.add_argument("--sleep", default="1.0-3.0")
     p_fetch_all.add_argument("--abort-after", type=int, default=5)
+    p_fetch_all.add_argument("--cookies",
+                              help="Cookieファイル、またはCookie(*.txt)をまとめたディレクトリのパス"
+                                   "(既定: プロジェクトルート直下のcookies.txt)")
     p_fetch_all.set_defaults(func=cmd_fetch_all)
 
     p_check = sub.add_parser("check-deleted", help="保存済み投稿の削除有無を確認(任意・要ネットワーク)")
     p_check.add_argument("username")
     p_check.add_argument("--limit", type=int, default=100, help="確認する直近投稿の件数上限")
     p_check.add_argument("--sleep-request", default="3.0-6.0")
+    p_check.add_argument("--cookies",
+                          help="Cookieファイル、またはCookie(*.txt)をまとめたディレクトリのパス"
+                               "(既定: プロジェクトルート直下のcookies.txt)")
     p_check.set_defaults(func=cmd_check_deleted)
 
     p_build = sub.add_parser("build", help="取得済みデータからHTMLビューアを生成")

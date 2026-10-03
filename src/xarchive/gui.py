@@ -31,6 +31,7 @@ class App(tk.Tk):
 
         self.username_var = tk.StringVar(value=self.settings.username)
         self.cookies_var = tk.StringVar(value=self.settings.cookies_path)
+        self.cookies_mode_var = tk.StringVar(value=self.settings.cookies_mode or "file")
         self.data_root_var = tk.StringVar(value=self.settings.data_root)
         self.retweets_var = tk.BooleanVar(value=self.settings.include_retweets)
         self.replies_var = tk.BooleanVar(value=self.settings.include_replies)
@@ -51,9 +52,15 @@ class App(tk.Tk):
         ttk.Label(form, text="アカウント名 (@なし)").grid(row=0, column=0, sticky="w")
         ttk.Entry(form, textvariable=self.username_var).grid(row=0, column=1, sticky="ew", padx=4)
 
-        ttk.Label(form, text="Cookieファイル").grid(row=1, column=0, sticky="w")
+        ttk.Label(form, text="Cookie").grid(row=1, column=0, sticky="w")
         ttk.Entry(form, textvariable=self.cookies_var).grid(row=1, column=1, sticky="ew", padx=4)
         ttk.Button(form, text="参照...", command=self._browse_cookies).grid(row=1, column=2)
+        cookie_mode_frame = ttk.Frame(form)
+        cookie_mode_frame.grid(row=1, column=3, padx=(6, 0))
+        ttk.Radiobutton(cookie_mode_frame, text="ファイル", variable=self.cookies_mode_var,
+                         value="file").pack(side="left")
+        ttk.Radiobutton(cookie_mode_frame, text="フォルダ", variable=self.cookies_mode_var,
+                         value="dir").pack(side="left")
 
         ttk.Label(form, text="保存先ディレクトリ").grid(row=2, column=0, sticky="w")
         ttk.Entry(form, textvariable=self.data_root_var).grid(row=2, column=1, sticky="ew", padx=4)
@@ -88,10 +95,15 @@ class App(tk.Tk):
     # ---- 参照ダイアログ ----
 
     def _browse_cookies(self) -> None:
-        path = filedialog.askopenfilename(
-            title="Cookieファイル(Netscape形式)を選択",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-        )
+        if self.cookies_mode_var.get() == "dir":
+            path = filedialog.askdirectory(
+                title="Cookie(*.txt)をまとめたディレクトリを選択"
+            )
+        else:
+            path = filedialog.askopenfilename(
+                title="Cookieファイル(Netscape形式)を選択",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            )
         if path:
             self.cookies_var.set(path)
 
@@ -106,6 +118,7 @@ class App(tk.Tk):
         return Settings(
             username=self.username_var.get().strip(),
             cookies_path=self.cookies_var.get().strip(),
+            cookies_mode=self.cookies_mode_var.get(),
             data_root=self.data_root_var.get().strip(),
             include_retweets=self.retweets_var.get(),
             include_replies=self.replies_var.get(),
@@ -121,8 +134,11 @@ class App(tk.Tk):
             messagebox.showwarning("入力不足", "保存先ディレクトリを選択してください。")
             return None
         if need_cookies:
-            if not s.cookies_path or not Path(s.cookies_path).is_file():
-                messagebox.showwarning("入力不足", "有効なCookieファイルを選択してください。")
+            if not s.cookies_path or not Path(s.cookies_path).exists():
+                messagebox.showwarning(
+                    "入力不足",
+                    "有効なCookieファイル(またはCookieをまとめたディレクトリ)を選択してください。",
+                )
                 return None
         return s.username, Path(s.data_root), Path(s.cookies_path) if s.cookies_path else Path()
 
