@@ -58,8 +58,14 @@ xarchive serve <username>
 # 同一ネットワーク上の他端末(スマホ等)からも閲覧したい場合
 xarchive serve <username> --host 0.0.0.0
 
-# 保存済み投稿が削除されていないか確認(任意・追加のネットワークアクセスを伴う)
+# 保存済み投稿が削除されていないか確認し、続けてビューアも再生成する
+# (任意・追加のネットワークアクセスを伴う)
 xarchive check-deleted <username> --limit 100
+
+# check-deleted / build はdata/配下の全アカウントをまとめて対象にできる
+# ('*'を使う場合はシェルのglob展開を避けるためクォートする。--allならクォート不要)
+xarchive check-deleted --all
+xarchive build '*'
 
 # data/配下の取得済みアカウント全てを順に差分取得+ビューア再生成(cron向け)
 xarchive fetch-all

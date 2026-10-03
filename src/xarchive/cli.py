@@ -44,6 +44,33 @@ def _cookies_path(root: Path, args: argparse.Namespace) -> Path:
     return root / "cookies.txt"
 
 
+def _list_accounts(data_root: Path) -> list[str]:
+    """data/配下の取得済みアカウント(posts/を持つディレクトリ)を名前順で返す。"""
+    if not data_root.is_dir():
+        return []
+    return sorted(
+        p.name for p in data_root.iterdir()
+        if p.is_dir() and not p.name.startswith(".") and (p / "posts").is_dir()
+    )
+
+
+def _resolve_targets(args: argparse.Namespace, data_root: Path) -> list[str] | None:
+    """usernameまたは--all/'*'から対象アカウント一覧を決める。指定不正ならNone。
+    注意: シェルでは'*'がglobとして展開されるためクォート('*')が必要。--allなら不要。"""
+    if args.all or args.username == "*":
+        if args.username not in (None, "*"):
+            print("[xarchive] --all とアカウント名は同時に指定できません。", file=sys.stderr)
+            return None
+        targets = _list_accounts(data_root)
+        if not targets:
+            print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
+        return targets
+    if not args.username:
+        print("[xarchive] アカウント名か --all を指定してください。", file=sys.stderr)
+        return None
+    return [args.username]
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
     root = fetch_mod.find_project_root()
     return fetch_mod.fetch(
@@ -79,10 +106,7 @@ def cmd_fetch_all(args: argparse.Namespace) -> int:
             print("[xarchive] 既に fetch-all が実行中のためスキップします。", file=sys.stderr)
             return 1
 
-        usernames = sorted(
-            p.name for p in data_root.iterdir()
-            if p.is_dir() and not p.name.startswith(".") and (p / "posts").is_dir()
-        )
+        usernames = _list_accounts(data_root)
         if not usernames:
             print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
             return 0
@@ -116,21 +140,42 @@ def cmd_fetch_all(args: argparse.Namespace) -> int:
 
 
 def cmd_check_deleted(args: argparse.Namespace) -> int:
+    """削除検知のあと、結果をビューアに反映するためbuildまで続けて行う。"""
     root = fetch_mod.find_project_root()
-    return fetch_mod.check_deleted(
-        args.username,
-        _data_root(root),
-        _cookies_path(root, args),
-        limit=args.limit,
-        sleep_request=args.sleep_request,
-        on_line=print,
-    )
+    data_root = _data_root(root)
+    targets = _resolve_targets(args, data_root)
+    if targets is None:
+        return 2
+    exit_code = 0
+    for username in targets:
+        if len(targets) > 1:
+            print(f"[xarchive] === {username} ===")
+        rc = fetch_mod.check_deleted(
+            username,
+            data_root,
+            _cookies_path(root, args),
+            limit=args.limit,
+            sleep_request=args.sleep_request,
+            on_line=print,
+        )
+        if rc != 0:
+            print(f"[xarchive] {username} の削除確認に失敗しました(code={rc})。", file=sys.stderr)
+            exit_code = rc
+            continue
+        out = render_mod.build(data_root / username, username)
+        print(f"[xarchive] {username} のビューアを更新しました: {out}")
+    return exit_code
 
 
 def cmd_build(args: argparse.Namespace) -> int:
     root = fetch_mod.find_project_root()
-    out = render_mod.build(_data_root(root) / args.username, args.username)
-    print(f"[xarchive] 生成しました: {out}")
+    data_root = _data_root(root)
+    targets = _resolve_targets(args, data_root)
+    if targets is None:
+        return 2
+    for username in targets:
+        out = render_mod.build(data_root / username, username)
+        print(f"[xarchive] 生成しました: {out}")
     return 0
 
 
@@ -197,8 +242,10 @@ def build_parser() -> argparse.ArgumentParser:
                                    "(既定: プロジェクトルート直下のcookies.txt)")
     p_fetch_all.set_defaults(func=cmd_fetch_all)
 
-    p_check = sub.add_parser("check-deleted", help="保存済み投稿の削除有無を確認(任意・要ネットワーク)")
-    p_check.add_argument("username")
+    p_check = sub.add_parser("check-deleted", help="保存済み投稿の削除有無を確認し、ビューアも更新する(任意・要ネットワーク)")
+    p_check.add_argument("username", nargs="?",
+                          help="対象アカウント名。'*'(要クォート)または--allでdata/配下全員")
+    p_check.add_argument("--all", action="store_true", help="data/配下の全アカウントを対象にする")
     p_check.add_argument("--limit", type=int, default=100, help="確認する直近投稿の件数上限")
     p_check.add_argument("--sleep-request", default="3.0-6.0")
     p_check.add_argument("--cookies",
@@ -207,7 +254,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.set_defaults(func=cmd_check_deleted)
 
     p_build = sub.add_parser("build", help="取得済みデータからHTMLビューアを生成")
-    p_build.add_argument("username")
+    p_build.add_argument("username", nargs="?",
+                          help="対象アカウント名。'*'(要クォート)または--allでdata/配下全員")
+    p_build.add_argument("--all", action="store_true", help="data/配下の全アカウントを対象にする")
     p_build.set_defaults(func=cmd_build)
 
     p_serve = sub.add_parser("serve", help="生成済みビューアを簡易HTTPサーバーで配信")
