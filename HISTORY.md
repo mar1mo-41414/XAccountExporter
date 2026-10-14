@@ -330,3 +330,9 @@ GUI版と並べて添付されるようにした。
 - 実在アカウントを凍結させられないため、gallery-dlの出力を差し替えたテストで検証
   (判定7パターン、移動・記録・同名衝突、`fetch-all`でのbuildスキップ)。通常のfetchでの
   回帰も確認済み
+- 実機検証(2026-10-14、一時ディレクトリを保存先にして`fetch()`を実行): 鍵垢(ユーザー自身の
+  アカウント)は`AuthorizationError: <name>'s Tweets are protected`、存在しないID(削除済み
+  アカウント)は`NotFoundError: User is suspended`が実際に出力され、どちらも想定どおり
+  `.deleted/`へ移動・`accounts.json`へ記録された。**削除済み/存在しないIDも
+  Xのレスポンス上は「凍結(UserUnavailable)」として返る**ため、凍結と同じ経路で検知できる
+  (`Requested user could not be found`が出るのはこれとは別のケースで、今回は再現していない)
