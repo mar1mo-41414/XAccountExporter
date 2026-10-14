@@ -28,6 +28,7 @@ class Settings:
     username: str = ""
     cookies_path: str = ""
     cookies_mode: str = "file"  # "file" または "dir"
+    target_all: bool = False  # True: 保存先配下の全アカウントを対象にする
     data_root: str = ""
     include_retweets: bool = False
     include_replies: bool = True

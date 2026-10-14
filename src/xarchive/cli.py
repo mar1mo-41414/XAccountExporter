@@ -6,8 +6,8 @@ import http.server
 import sys
 from pathlib import Path
 
+from . import batch
 from . import fetch as fetch_mod
-from . import render as render_mod
 
 # クライアント側の接続切断(動画のシーク・タブを閉じる等)で頻発するが無害なので
 # トレースバックを出さずに黙って無視する例外
@@ -44,16 +44,6 @@ def _cookies_path(root: Path, args: argparse.Namespace) -> Path:
     return root / "cookies.txt"
 
 
-def _list_accounts(data_root: Path) -> list[str]:
-    """data/配下の取得済みアカウント(posts/を持つディレクトリ)を名前順で返す。"""
-    if not data_root.is_dir():
-        return []
-    return sorted(
-        p.name for p in data_root.iterdir()
-        if p.is_dir() and not p.name.startswith(".") and (p / "posts").is_dir()
-    )
-
-
 def _resolve_targets(args: argparse.Namespace, data_root: Path) -> list[str] | None:
     """usernameまたは--all/'*'から対象アカウント一覧を決める。指定不正ならNone。
     注意: シェルでは'*'がglobとして展開されるためクォート('*')が必要。--allなら不要。"""
@@ -61,7 +51,7 @@ def _resolve_targets(args: argparse.Namespace, data_root: Path) -> list[str] | N
         if args.username not in (None, "*"):
             print("[xarchive] --all とアカウント名は同時に指定できません。", file=sys.stderr)
             return None
-        targets = _list_accounts(data_root)
+        targets = batch.list_accounts(data_root)
         if not targets:
             print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
         return targets
@@ -92,34 +82,14 @@ def cmd_fetch_all(args: argparse.Namespace) -> int:
     cron等での定期実行を想定し、多重実行防止のロックを取る。"""
     root = fetch_mod.find_project_root()
     data_root = _data_root(root)
-    data_root.mkdir(parents=True, exist_ok=True)
-
-    lock_path = data_root / ".fetch-all.lock"
-    lock_file = open(lock_path, "w")
     try:
-        try:
-            import fcntl
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except ImportError:
-            pass  # fcntl非対応環境(Windows等)ではロック無しで続行
-        except BlockingIOError:
-            print("[xarchive] 既に fetch-all が実行中のためスキップします。", file=sys.stderr)
-            return 1
-
-        usernames = _list_accounts(data_root)
-        if not usernames:
-            print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
-            return 0
-
-        print(f"[xarchive] {len(usernames)}件のアカウントを順に差分取得します: {', '.join(usernames)}")
-        exit_code = 0
-        for username in usernames:
-            print(f"[xarchive] === {username} ===")
-            rc = fetch_mod.fetch(
-                username,
-                data_root,
-                _cookies_path(root, args),
-                full=False,
+        with batch.fetch_all_lock(data_root):
+            usernames = batch.list_accounts(data_root)
+            if not usernames:
+                print("[xarchive] data/ 配下に取得済みアカウントが見つかりません。")
+                return 0
+            return batch.fetch_accounts(
+                usernames, data_root, _cookies_path(root, args),
                 sleep_request=args.sleep_request,
                 sleep=args.sleep,
                 abort_after=args.abort_after,
@@ -127,18 +97,9 @@ def cmd_fetch_all(args: argparse.Namespace) -> int:
                 include_replies=not args.no_replies,
                 on_line=print,
             )
-            if rc != 0:
-                print(f"[xarchive] {username} の取得に失敗しました(code={rc})。次へ進みます。",
-                      file=sys.stderr)
-                exit_code = rc
-                continue
-            if not (data_root / username).is_dir():
-                continue  # 凍結・鍵垢化で.deletedへ退避されたのでbuild不要
-            out = render_mod.build(data_root / username, username)
-            print(f"[xarchive] {username} のビューアを更新しました: {out}")
-        return exit_code
-    finally:
-        lock_file.close()
+    except batch.LockBusy:
+        print("[xarchive] 既に fetch-all が実行中のためスキップします。", file=sys.stderr)
+        return 1
 
 
 def cmd_check_deleted(args: argparse.Namespace) -> int:
@@ -148,25 +109,10 @@ def cmd_check_deleted(args: argparse.Namespace) -> int:
     targets = _resolve_targets(args, data_root)
     if targets is None:
         return 2
-    exit_code = 0
-    for username in targets:
-        if len(targets) > 1:
-            print(f"[xarchive] === {username} ===")
-        rc = fetch_mod.check_deleted(
-            username,
-            data_root,
-            _cookies_path(root, args),
-            limit=args.limit,
-            sleep_request=args.sleep_request,
-            on_line=print,
-        )
-        if rc != 0:
-            print(f"[xarchive] {username} の削除確認に失敗しました(code={rc})。", file=sys.stderr)
-            exit_code = rc
-            continue
-        out = render_mod.build(data_root / username, username)
-        print(f"[xarchive] {username} のビューアを更新しました: {out}")
-    return exit_code
+    return batch.check_deleted_accounts(
+        targets, data_root, _cookies_path(root, args),
+        limit=args.limit, sleep_request=args.sleep_request, on_line=print,
+    )
 
 
 def cmd_build(args: argparse.Namespace) -> int:
@@ -175,10 +121,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     targets = _resolve_targets(args, data_root)
     if targets is None:
         return 2
-    for username in targets:
-        out = render_mod.build(data_root / username, username)
-        print(f"[xarchive] 生成しました: {out}")
-    return 0
+    return batch.build_accounts(targets, data_root, on_line=print)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
