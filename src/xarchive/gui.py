@@ -286,7 +286,7 @@ class App(tk.Tk):
                 include_replies=include_replies,
                 on_line=on_line,
             )
-            # 凍結・鍵垢化で退避された場合、fetch()は0を返しdata/<username>が無くなる
+            # 削除(凍結)・鍵垢化で退避された場合、fetch()は0を返しdata/<username>が無くなる
             if rc == 0 and not (data_root / username).is_dir():
                 rec = fetch_mod.find_archived_record(data_root, username)
                 if rec:

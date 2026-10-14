@@ -67,11 +67,11 @@ def data_dir(data_root: Path, username: str) -> Path:
     return data_root / username
 
 
-# 凍結・非公開(鍵垢)になったアカウントの退避先(data_root直下)。ドット始まりなので
+# 削除(凍結)・非公開(鍵垢)になったアカウントの退避先(data_root直下)。ドット始まりなので
 # fetch-all等のアカウント列挙(`.`始まりを除外)の対象にならない。
 DELETED_DIR_NAME = ".deleted"
 
-# gallery-dlが出力するエラー行。終了コードは凍結(NotFoundError)=4、鍵垢(AuthorizationError)=16。
+# gallery-dlが出力するエラー行。終了コードは削除/凍結(NotFoundError)=4、鍵垢(AuthorizationError)=16。
 # 注意: 鍵垢のメッセージは "<screen_name>'s Tweets are protected"(所有格の's付き)。
 # なお削除・改名で出る "NotFoundError: Requested user could not be found" は
 # 改名の可能性があり誤判定が怖いため対象外にしている。
@@ -82,7 +82,7 @@ _PROTECTED_RE = re.compile(
 
 
 def detect_unavailable_account(output: str, username: str) -> str | None:
-    """gallery-dlの出力から、対象アカウントが凍結("suspended")/鍵垢化("protected")
+    """gallery-dlの出力から、対象アカウントが削除・凍結("suspended")/鍵垢化("protected")
     されたことを判定する。どちらでもなければNone。"""
     if _SUSPENDED_RE.search(output):
         return "suspended"
@@ -126,7 +126,9 @@ def archive_unavailable_account(data_root: Path, username: str, reason: str) -> 
     return dest
 
 
-REASON_LABELS = {"suspended": "凍結されている", "protected": "非公開(鍵垢)になっている"}
+# 表示用。"suspended"はXが返す「User is suspended」だが、削除済み・存在しないIDでも同じ応答に
+# なる(実機確認済み)ため、凍結とは限らない旨を表示に含める。
+REASON_LABELS = {"suspended": "削除(凍結)されている", "protected": "非公開(鍵垢)になっている"}
 
 
 def find_archived_record(data_root: Path, username: str) -> dict | None:

@@ -79,7 +79,7 @@ def fetch_accounts(
             exit_code = rc
             continue
         if not (data_root / username).is_dir():
-            continue  # 凍結・鍵垢化で.deletedへ退避されたのでbuild不要
+            continue  # 削除(凍結)・鍵垢化で.deletedへ退避されたのでbuild不要
         out = render_mod.build(data_root / username, username)
         on_line(f"[xarchive] {username} のビューアを更新しました: {out}")
     return exit_code
