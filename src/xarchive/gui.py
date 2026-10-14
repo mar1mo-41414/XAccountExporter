@@ -18,6 +18,14 @@ class _TaskDone:
         self.returncode = returncode
 
 
+class _Notice:
+    """ワーカースレッドから、メインスレッドでダイアログを出してもらうための通知。"""
+
+    def __init__(self, title: str, text: str):
+        self.title = title
+        self.text = text
+
+
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -142,6 +150,30 @@ class App(tk.Tk):
                 return None
         return s.username, Path(s.data_root), Path(s.cookies_path) if s.cookies_path else Path()
 
+    # ---- 退避済みアカウントの案内 ----
+
+    @staticmethod
+    def _archived_text(username: str, rec: dict) -> str:
+        label = fetch_mod.REASON_LABELS.get(rec.get("reason", ""), "取得できない状態")
+        return (
+            f"{username} は{label}ため取得できませんでした。\n\n"
+            f"保存済みのデータは「{fetch_mod.DELETED_DIR_NAME}」フォルダへ移動し、"
+            f"記録しました。\n(保存先ディレクトリ/{fetch_mod.DELETED_DIR_NAME}/{rec.get('moved_to', username)})"
+        )
+
+    def _warn_no_data(self, data_root: Path, username: str) -> None:
+        rec = fetch_mod.find_archived_record(data_root, username)
+        if rec:
+            messagebox.showwarning(
+                "退避済みのアカウント",
+                self._archived_text(username, rec).replace("取得できませんでした。", "取得できません。", 1),
+            )
+        else:
+            messagebox.showwarning(
+                "データがありません",
+                f"{username} のデータが保存先にありません。先に「取得」を実行してください。",
+            )
+
     # ---- ボタン動作 ----
 
     def _do_fetch(self, *, full: bool) -> None:
@@ -154,15 +186,25 @@ class App(tk.Tk):
         username, data_root, cookies_path = v
         self._clear_log()
         self._append_log(f"[xarchive] {username} の{'全件' if full else '差分'}取得を開始します...")
-        self._start(
-            lambda on_line: fetch_mod.fetch(
+        include_retweets = self.retweets_var.get()
+        include_replies = self.replies_var.get()
+
+        def task(on_line):
+            rc = fetch_mod.fetch(
                 username, data_root, cookies_path,
                 full=full,
-                include_retweets=self.retweets_var.get(),
-                include_replies=self.replies_var.get(),
+                include_retweets=include_retweets,
+                include_replies=include_replies,
                 on_line=on_line,
             )
-        )
+            # 凍結・鍵垢化で退避された場合、fetch()は0を返しdata/<username>が無くなる
+            if rc == 0 and not (data_root / username).is_dir():
+                rec = fetch_mod.find_archived_record(data_root, username)
+                if rec:
+                    self.queue.put(_Notice("アカウントを退避しました", self._archived_text(username, rec)))
+            return rc
+
+        self._start(task)
 
     def _do_build(self) -> None:
         if self.running:
@@ -173,6 +215,9 @@ class App(tk.Tk):
             return
         username, data_root, _cookies = v
         data_dir = data_root / username
+        if not data_dir.is_dir():
+            self._warn_no_data(data_root, username)
+            return
         self._clear_log()
         self._append_log(f"[xarchive] {username} のビューアを生成します...")
 
@@ -194,7 +239,10 @@ class App(tk.Tk):
             return
         index = Path(s.data_root) / s.username / "index.html"
         if not index.is_file():
-            messagebox.showwarning("未生成", "先に「ビューア生成」を実行してください。")
+            if not (Path(s.data_root) / s.username).is_dir():
+                self._warn_no_data(Path(s.data_root), s.username)
+            else:
+                messagebox.showwarning("未生成", "先に「ビューア生成」を実行してください。")
             return
         webbrowser.open(index.as_uri())
 
@@ -222,6 +270,8 @@ class App(tk.Tk):
                 item = self.queue.get_nowait()
                 if isinstance(item, _TaskDone):
                     self._on_task_done(item.returncode)
+                elif isinstance(item, _Notice):
+                    messagebox.showwarning(item.title, item.text)
                 else:
                     self._append_log(str(item))
         except queue.Empty:

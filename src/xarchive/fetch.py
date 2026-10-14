@@ -126,6 +126,25 @@ def archive_unavailable_account(data_root: Path, username: str, reason: str) -> 
     return dest
 
 
+REASON_LABELS = {"suspended": "凍結されている", "protected": "非公開(鍵垢)になっている"}
+
+
+def find_archived_record(data_root: Path, username: str) -> dict | None:
+    """data_root/.deleted/accounts.json から、指定アカウントの最新の退避記録を返す
+    (無ければNone)。GUIが「このアカウントは退避済み」と案内するために使う。"""
+    record_path = data_root / DELETED_DIR_NAME / "accounts.json"
+    if not record_path.is_file():
+        return None
+    try:
+        records = json.loads(record_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    for rec in reversed(records):
+        if str(rec.get("username", "")).lower() == username.lower():
+            return rec
+    return None
+
+
 def resolve_cookies(cookies_path: Path, username: str) -> Path:
     """cookies_pathがディレクトリの場合、中の*.txtファイル群から対象アカウント名の
     CRC32ハッシュに基づいて決定的に1つを選ぶ(同じアカウントは常に同じCookieファイルを
@@ -297,7 +316,7 @@ def fetch(
     if result.returncode != 0:
         reason = detect_unavailable_account(result.output, username)
         if reason:
-            label = {"suspended": "凍結されている", "protected": "非公開(鍵垢)になっている"}[reason]
+            label = REASON_LABELS[reason]
             dest = archive_unavailable_account(data_root, username, reason)
             emit(
                 f"[xarchive] {username} は{label}ため取得できません。"
