@@ -106,6 +106,10 @@ xarchive fetch <username> --cookies /path/to/CookiesDir
   そのため差分実行時、本文のみの投稿が連続する区間ではやや余分に遡ることがあるが、
   安全側(取りこぼし防止)に倒した設計として許容している
 - 保存済みの投稿JSON(`posts/<tweet_id>.json`)は一度書き出したら上書きしない(追記のみ)
+- 取得対象のアカウントが凍結されていた・鍵垢(非公開)になっていた場合は、そのアカウントの
+  データを`data/.deleted/<username>/`へ移動し、理由と日時を`data/.deleted/accounts.json`に
+  記録する(以降`fetch-all`等の対象から外れる。`ls -a`で確認できる)。元に戻したい場合は
+  ディレクトリを`data/`直下へ戻せばよい
 - 削除検知はデフォルトでは行わない(`check-deleted`を明示実行した場合のみ)。検知結果は
   `data/<username>/deleted.json`に追記され、`posts/*.json`自体は変更しない
 

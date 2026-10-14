@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
 import zlib
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -62,6 +65,65 @@ def find_project_root(start: Path | None = None) -> Path:
 
 def data_dir(data_root: Path, username: str) -> Path:
     return data_root / username
+
+
+# 凍結・非公開(鍵垢)になったアカウントの退避先(data_root直下)。ドット始まりなので
+# fetch-all等のアカウント列挙(`.`始まりを除外)の対象にならない。
+DELETED_DIR_NAME = ".deleted"
+
+# gallery-dlが出力するエラー行。終了コードは凍結(NotFoundError)=4、鍵垢(AuthorizationError)=16。
+# 注意: 鍵垢のメッセージは "<screen_name>'s Tweets are protected"(所有格の's付き)。
+# なお削除・改名で出る "NotFoundError: Requested user could not be found" は
+# 改名の可能性があり誤判定が怖いため対象外にしている。
+_SUSPENDED_RE = re.compile(r"NotFoundError:\s*User is suspended", re.IGNORECASE)
+_PROTECTED_RE = re.compile(
+    r"AuthorizationError:\s*(?P<name>\w+)(?:'s)?\s+Tweets are protected", re.IGNORECASE
+)
+
+
+def detect_unavailable_account(output: str, username: str) -> str | None:
+    """gallery-dlの出力から、対象アカウントが凍結("suspended")/鍵垢化("protected")
+    されたことを判定する。どちらでもなければNone。"""
+    if _SUSPENDED_RE.search(output):
+        return "suspended"
+    for m in _PROTECTED_RE.finditer(output):
+        if m.group("name").lower() == username.lower():
+            return "protected"
+    return None
+
+
+def archive_unavailable_account(data_root: Path, username: str, reason: str) -> Path | None:
+    """data_root/<username> を data_root/.deleted/<username> へ移動し、
+    data_root/.deleted/accounts.json に記録を追記する。移動先が既に存在する場合は
+    タイムスタンプ付きの名前にして上書きを避ける。移動元が無ければNone。"""
+    src = data_dir(data_root, username)
+    if not src.is_dir():
+        return None
+    deleted_root = data_root / DELETED_DIR_NAME
+    deleted_root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    dest = deleted_root / username
+    if dest.exists():
+        dest = deleted_root / f"{username}_{now:%Y%m%d-%H%M%S}"
+    posts_count = sum(1 for _ in (src / "posts").glob("*.json")) if (src / "posts").is_dir() else 0
+    shutil.move(str(src), str(dest))
+
+    record_path = deleted_root / "accounts.json"
+    records: list = []
+    if record_path.is_file():
+        try:
+            records = json.loads(record_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            records = []
+    records.append({
+        "username": username,
+        "reason": reason,
+        "detected_at": now.isoformat(timespec="seconds"),
+        "moved_to": dest.name,
+        "posts": posts_count,
+    })
+    record_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    return dest
 
 
 def resolve_cookies(cookies_path: Path, username: str) -> Path:
@@ -233,6 +295,19 @@ def fetch(
     result = _run_gallery_dl(config, args, on_line=on_line)
 
     if result.returncode != 0:
+        reason = detect_unavailable_account(result.output, username)
+        if reason:
+            label = {"suspended": "凍結されている", "protected": "非公開(鍵垢)になっている"}[reason]
+            dest = archive_unavailable_account(data_root, username, reason)
+            emit(
+                f"[xarchive] {username} は{label}ため取得できません。"
+                f"データを {dest} へ移動し、記録しました"
+                f"({data_root / DELETED_DIR_NAME / 'accounts.json'})。"
+            )
+            # 想定内の結果として正常終了扱いにする。呼び出し側はdata_root/<username>が
+            # 無くなっている点で判別できる(fetch-allはその場合buildをスキップする)。
+            return 0
+
         lowered = result.output.lower()
         if any(hint in lowered for hint in LOGIN_ERROR_HINTS):
             emit(

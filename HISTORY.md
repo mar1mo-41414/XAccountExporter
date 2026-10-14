@@ -303,3 +303,30 @@ GUI版と並べて添付されるようにした。
 - 失敗したアカウントがあっても残りは続行し、最後に最悪の終了コードを返す
   (`fetch-all`と同じ方針)。実際に8アカウント全部を`check-deleted --all --limit 1
   --cookies Cookies`で回し、Cookieプールの割り当て込みで動作確認した
+
+## 2026-10-14 凍結・鍵垢化したアカウントを`data/.deleted/`へ退避
+
+`data/`内のアカウントが凍結(`[twitter][error] NotFoundError: User is suspended`)や
+鍵垢化(`AuthorizationError: <name>'s Tweets are protected`)すると、`fetch`/`fetch-all`が
+毎回エラーになり続けるため、検知して別ディレクトリへ移し記録する機能を追加した。
+
+- gallery-dlのソース(`twitter.py`/`exception.py`)で出どころを確認: 凍結はユーザー検索時の
+  `NotFoundError`(終了コード4)、鍵垢は`AuthorizationError`(同16)。鍵垢のメッセージは
+  依頼文の表記と違い **所有格の`'s`付き**(`foo's Tweets are protected`)なので、正規表現は
+  `'s`の有無どちらも許容し、**メッセージ中のユーザー名が取得対象と一致する場合のみ**鍵垢と判定する
+- 退避先は`data/.deleted/`(依頼では`.deleted`か`deleted`の二択)。ドット始まりにしたのは、
+  アカウント列挙(`_list_accounts`)が`.`始まりを除外するため`fetch-all`等に拾われず、
+  かつ`data/`直下の見た目も汚さないため。記録は`.deleted/accounts.json`に
+  `{username, reason(suspended/protected), detected_at, moved_to, posts}`を追記。
+  移動先に同名が既にある場合はタイムスタンプ付きの名前にして上書きしない
+- 退避は想定内の結果として`fetch()`は0を返す。`fetch-all`は`data/<username>`が無くなって
+  いれば`build`をスキップする(`render.build`は存在しないディレクトリでも`mkdir`して
+  空のindex.htmlを作ってしまうため)
+- 対象外にしたもの: `NotFoundError: Requested user could not be found`(削除・**改名**でも
+  出るため、改名されただけのアカウントのデータを誤って退避する恐れがある)
+- 注意点: 複数Cookie運用(`--cookies`ディレクトリ)では、鍵垢エラーは「そのCookieの捨て垢が
+  フォローしていない」だけの可能性があり、別のCookieなら読めるかもしれない。検知したら
+  即退避する仕様なので、誤判定で退避した場合は`.deleted/`から`data/`直下へ戻せばよい
+- 実在アカウントを凍結させられないため、gallery-dlの出力を差し替えたテストで検証
+  (判定7パターン、移動・記録・同名衝突、`fetch-all`でのbuildスキップ)。通常のfetchでの
+  回帰も確認済み
